@@ -30,8 +30,11 @@ applications in an expressive way.
   * [Flags](#flags)
     + [Placeholder Values](#placeholder-values)
     + [Alternate Names](#alternate-names)
+    + [Ordering](#ordering)
     + [Values from the Environment](#values-from-the-environment)
+    + [Values from files](#values-from-files)
     + [Values from alternate input sources (YAML, TOML, and others)](#values-from-alternate-input-sources-yaml-toml-and-others)
+    + [Precedence](#precedence)
   * [Subcommands](#subcommands)
   * [Subcommands categories](#subcommands-categories)
   * [Exit code](#exit-code)
@@ -44,6 +47,7 @@ applications in an expressive way.
   * [Version Flag](#version-flag)
     + [Customization](#customization-2)
     + [Full API Example](#full-api-example)
+  * [Combining short Bool options](#combining-short-bool-options)
 - [Contribution Guidelines](#contribution-guidelines)
 
 <!-- tocstop -->
@@ -450,6 +454,76 @@ That flag can then be set with `--lang spanish` or `-l spanish`. Note that
 giving two different forms of the same flag in the same command invocation is an
 error.
 
+#### Ordering
+
+Flags for the application and commands are shown in the order they are defined.
+However, it's possible to sort them from outside this library by using `FlagsByName`
+or `CommandsByName` with `sort`.
+
+For example this:
+
+<!-- {
+  "args": ["&#45;&#45;help"],
+  "output": "add a task to the list\n.*complete a task on the list\n.*\n\n.*\n.*Load configuration from FILE\n.*Language for the greeting.*"
+} -->
+``` go
+package main
+
+import (
+  "os"
+  "sort"
+
+  "github.com/urfave/cli"
+)
+
+func main() {
+  app := cli.NewApp()
+
+  app.Flags = []cli.Flag {
+    cli.StringFlag{
+      Name: "lang, l",
+      Value: "english",
+      Usage: "Language for the greeting",
+    },
+    cli.StringFlag{
+      Name: "config, c",
+      Usage: "Load configuration from `FILE`",
+    },
+  }
+
+  app.Commands = []cli.Command{
+    {
+      Name:    "complete",
+      Aliases: []string{"c"},
+      Usage:   "complete a task on the list",
+      Action:  func(c *cli.Context) error {
+        return nil
+      },
+    },
+    {
+      Name:    "add",
+      Aliases: []string{"a"},
+      Usage:   "add a task to the list",
+      Action:  func(c *cli.Context) error {
+        return nil
+      },
+    },
+  }
+
+  sort.Sort(cli.FlagsByName(app.Flags))
+  sort.Sort(cli.CommandsByName(app.Commands))
+
+  app.Run(os.Args)
+}
+```
+
+Will result in help output like:
+
+```
+--config FILE, -c FILE  Load configuration from FILE
+--lang value, -l value  Language for the greeting (default: "english")
+```
+
 #### Values from the Environment
 
 You can also have the default value set from the environment via `EnvVar`.  e.g.
@@ -514,6 +588,41 @@ func main() {
   app.Run(os.Args)
 }
 ```
+
+#### Values from files
+
+You can also have the default value set from file via `FilePath`.  e.g.
+
+<!-- {
+  "args": ["&#45;&#45;help"],
+  "output": "password for the mysql database"
+} -->
+``` go
+package main
+
+import (
+  "os"
+
+  "github.com/urfave/cli"
+)
+
+func main() {
+  app := cli.NewApp()
+
+  app.Flags = []cli.Flag {
+    cli.StringFlag{
+      Name: "password, p",
+      Usage: "password for the mysql database",
+      FilePath: "/etc/mysql/password",
+    },
+  }
+
+  app.Run(os.Args)
+}
+```
+
+Note that default values set from file (e.g. `FilePath`) take precedence over
+default values set from the enviornment (e.g. `EnvVar`).
 
 #### Values from alternate input sources (YAML, TOML, and others)
 
@@ -584,6 +693,15 @@ func main() {
   app.Run(os.Args)
 }
 ```
+
+#### Precedence
+
+The precedence for flag value sources is as follows (highest to lowest):
+
+0. Command line flag value from user
+0. Environment variable (if specified)
+0. Configuration file (if specified)
+0. Default defined on the flag
 
 ### Subcommands
 
@@ -680,11 +798,11 @@ func main() {
     },
     {
       Name:     "add",
-      Category: "template",
+      Category: "Template actions",
     },
     {
       Name:     "remove",
-      Category: "template",
+      Category: "Template actions",
     },
   }
 
@@ -889,16 +1007,13 @@ SUPPORT: support@awesometown.example.com
   cli.AppHelpTemplate = `NAME:
    {{.Name}} - {{.Usage}}
 USAGE:
-   {{.HelpName}} {{if .VisibleFlags}}[global options]{{end}}{{if .Commands}} command
-[command options]{{end}} {{if
-.ArgsUsage}}{{.ArgsUsage}}{{else}}[arguments...]{{end}}
+   {{.HelpName}} {{if .VisibleFlags}}[global options]{{end}}{{if .Commands}} command [command options]{{end}} {{if .ArgsUsage}}{{.ArgsUsage}}{{else}}[arguments...]{{end}}
    {{if len .Authors}}
-AUTHOR(S):
+AUTHOR:
    {{range .Authors}}{{ . }}{{end}}
    {{end}}{{if .Commands}}
 COMMANDS:
-{{range .Commands}}{{if not .HideHelp}}   {{join .Names ", "}}{{ "\t"
-}}{{.Usage}}{{ "\n" }}{{end}}{{end}}{{end}}{{if .VisibleFlags}}
+{{range .Commands}}{{if not .HideHelp}}   {{join .Names ", "}}{{ "\t"}}{{.Usage}}{{ "\n" }}{{end}}{{end}}{{end}}{{if .VisibleFlags}}
 GLOBAL OPTIONS:
    {{range .VisibleFlags}}{{.}}
    {{end}}{{end}}{{if .Copyright }}
@@ -1295,6 +1410,26 @@ func wopAction(c *cli.Context) error {
   return nil
 }
 ```
+
+### Combining short Bool options
+
+Traditional use of boolean options using their shortnames look like this:
+```
+# cmd foobar -s -o
+```
+
+Suppose you want users to be able to combine your bool options with their shortname.  This
+can be done using the **UseShortOptionHandling** bool in your commands.  Suppose your program
+has a two bool flags such as *serve* and *option* with the short options of *-o* and
+*-s* respectively. With **UseShortOptionHandling** set to *true*, a user can use a syntax
+like:
+```
+# cmd foobar -so
+```
+
+If you enable the **UseShortOptionHandling*, then you must not use any flags that have a single
+leading *-* or this will result in failures.  For example, **-option** can no longer be used.  Flags
+with two leading dashes (such as **--options**) are still valid.
 
 ## Contribution Guidelines
 

@@ -1,14 +1,18 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 
-	"github.com/RichardKnop/go-oauth2-server/oauth"
+	"github.com/RichardKnop/go-oauth2-server/models"
 	"github.com/RichardKnop/go-oauth2-server/session"
 )
+
+// ErrIncorrectResponseType a form value for response_type was not set to token or code
+var ErrIncorrectResponseType = errors.New("Response type not one of token or code")
 
 func (s *Service) authorizeForm(w http.ResponseWriter, r *http.Request) {
 	sessionService, client, _, responseType, _, err := s.authorizeCommon(r)
@@ -116,7 +120,7 @@ func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Service) authorizeCommon(r *http.Request) (session.ServiceInterface, *oauth.Client, *oauth.User, string, *url.URL, error) {
+func (s *Service) authorizeCommon(r *http.Request) (session.ServiceInterface, *models.OauthClient, *models.OauthUser, string, *url.URL, error) {
 	// Get the session service from the request context
 	sessionService, err := getSessionService(r)
 	if err != nil {
@@ -146,7 +150,7 @@ func (s *Service) authorizeCommon(r *http.Request) (session.ServiceInterface, *o
 	// Check the response_type is either "code" or "token"
 	responseType := r.Form.Get("response_type")
 	if responseType != "code" && responseType != "token" {
-		return nil, nil, nil, "", nil, err
+		return nil, nil, nil, "", nil, ErrIncorrectResponseType
 	}
 
 	// Fallback to the client redirect URI if not in query string

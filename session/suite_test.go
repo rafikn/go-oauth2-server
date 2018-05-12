@@ -7,6 +7,7 @@ import (
 
 	"github.com/RichardKnop/go-oauth2-server/config"
 	"github.com/RichardKnop/go-oauth2-server/session"
+	"github.com/gorilla/sessions"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
@@ -21,7 +22,7 @@ type SessionTestSuite struct {
 // The SetupSuite method will be run by testify once, at the very
 // start of the testing suite, before any tests are run.
 func (suite *SessionTestSuite) SetupSuite() {
-	suite.cnf = config.NewConfig(false, false)
+	suite.cnf = config.NewConfig(false, false, "etcd")
 
 	// Overwrite internal vars so we don't affect existing session
 	session.StorageSessionName = "test_session"
@@ -31,7 +32,9 @@ func (suite *SessionTestSuite) SetupSuite() {
 	r, err := http.NewRequest("GET", "http://1.2.3.4/foo/bar", nil)
 	assert.NoError(suite.T(), err, "Request setup should not get an error")
 	w := httptest.NewRecorder()
-	suite.service = session.NewService(suite.cnf, r, w)
+
+	suite.service = session.NewService(suite.cnf, sessions.NewCookieStore([]byte(suite.cnf.Session.Secret)))
+	suite.service.SetSessionService(r, w)
 }
 
 // The TearDownSuite method will be run by testify once, at the very

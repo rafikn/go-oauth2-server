@@ -7,17 +7,20 @@ import (
 )
 
 const (
-	stsHeader           = "Strict-Transport-Security"
-	stsSubdomainString  = "; includeSubdomains"
-	stsPreloadString    = "; preload"
-	frameOptionsHeader  = "X-Frame-Options"
-	frameOptionsValue   = "DENY"
-	contentTypeHeader   = "X-Content-Type-Options"
-	contentTypeValue    = "nosniff"
-	xssProtectionHeader = "X-XSS-Protection"
-	xssProtectionValue  = "1; mode=block"
-	cspHeader           = "Content-Security-Policy"
-	hpkpHeader          = "Public-Key-Pins"
+	stsHeader            = "Strict-Transport-Security"
+	stsSubdomainString   = "; includeSubdomains"
+	stsPreloadString     = "; preload"
+	frameOptionsHeader   = "X-Frame-Options"
+	frameOptionsValue    = "DENY"
+	contentTypeHeader    = "X-Content-Type-Options"
+	contentTypeValue     = "nosniff"
+	xssProtectionHeader  = "X-XSS-Protection"
+	xssProtectionValue   = "1; mode=block"
+	cspHeader            = "Content-Security-Policy"
+	hpkpHeader           = "Public-Key-Pins"
+	referrerPolicyHeader = "Referrer-Policy"
+
+	cspNonceSize = 16
 )
 
 func defaultBadHostHandler(w http.ResponseWriter, r *http.Request) {
@@ -28,6 +31,8 @@ func defaultBadHostHandler(w http.ResponseWriter, r *http.Request) {
 type Options struct {
 	// AllowedHosts is a list of fully qualified domain names that are allowed. Default is empty list, which allows any and all host names.
 	AllowedHosts []string
+	// HostsProxyHeaders is a set of header keys that may hold a proxied hostname value for the request.
+	HostsProxyHeaders []string
 	// If SSLRedirect is set to true, then only allow https requests. Default is false.
 	SSLRedirect bool
 	// If SSLTemporaryRedirect is true, the a 302 will be used while redirecting. Default is false (301).
@@ -46,19 +51,27 @@ type Options struct {
 	ForceSTSHeader bool
 	// If FrameDeny is set to true, adds the X-Frame-Options header with the value of `DENY`. Default is false.
 	FrameDeny bool
-	// CustomFrameOptionsValue allows the X-Frame-Options header value to be set with a custom value. This overrides the FrameDeny option.
+	// CustomFrameOptionsValue allows the X-Frame-Options header value to be set with a custom value. This overrides the FrameDeny option. Default is "".
 	CustomFrameOptionsValue string
 	// If ContentTypeNosniff is true, adds the X-Content-Type-Options header with the value `nosniff`. Default is false.
 	ContentTypeNosniff bool
 	// If BrowserXssFilter is true, adds the X-XSS-Protection header with the value `1; mode=block`. Default is false.
 	BrowserXssFilter bool
+	// CustomBrowserXssValue allows the X-XSS-Protection header value to be set with a custom value. This overrides the BrowserXssFilter option. Default is "".
+	CustomBrowserXssValue string
 	// ContentSecurityPolicy allows the Content-Security-Policy header value to be set with a custom value. Default is "".
+	// Passing a template string will replace `$NONCE` with a dynamic nonce value of 16 bytes for each request which can be later retrieved using the Nonce function.
+	// Eg: script-src $NONCE -> script-src 'nonce-a2ZobGFoZg=='
 	ContentSecurityPolicy string
 	// PublicKey implements HPKP to prevent MITM attacks with forged certificates. Default is "".
 	PublicKey string
+	// Referrer Policy allows sites to control when browsers will pass the Referer header to other sites. Default is "".
+	ReferrerPolicy string
 	// When developing, the AllowedHosts, SSL, and STS options can cause some unwanted effects. Usually testing happens on http, not https, and on localhost, not your production domain... so set this to true for dev environment.
 	// If you would like your development environment to mimic production with complete Host blocking, SSL redirects, and STS headers, leave this as false. Default if false.
 	IsDevelopment bool
+
+	nonceEnabled bool
 }
 
 // Secure is a middleware that helps setup a few basic security features. A single secure.Options struct can be
@@ -80,6 +93,10 @@ func New(options ...Options) *Secure {
 		o = options[0]
 	}
 
+	o.ContentSecurityPolicy = strings.Replace(o.ContentSecurityPolicy, "$NONCE", "'nonce-%[1]s'", -1)
+
+	o.nonceEnabled = strings.Contains(o.ContentSecurityPolicy, "%[1]s")
+
 	return &Secure{
 		opt:            o,
 		badHostHandler: http.HandlerFunc(defaultBadHostHandler),
@@ -94,6 +111,10 @@ func (s *Secure) SetBadHostHandler(handler http.Handler) {
 // Handler implements the http.HandlerFunc for integration with the standard net/http lib.
 func (s *Secure) Handler(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.opt.nonceEnabled {
+			r = withCSPNonce(r, cspRandNonce())
+		}
+
 		// Let secure process the request. If it returns an error,
 		// that indicates the request should not continue.
 		err := s.Process(w, r)
@@ -119,11 +140,20 @@ func (s *Secure) HandlerFuncWithNext(w http.ResponseWriter, r *http.Request, nex
 
 // Process runs the actual checks and returns an error if the middleware chain should stop.
 func (s *Secure) Process(w http.ResponseWriter, r *http.Request) error {
+	// Resolve the host for the request, using proxy headers if present.
+	host := r.Host
+	for _, header := range s.opt.HostsProxyHeaders {
+		if h := r.Header.Get(header); h != "" {
+			host = h
+			break
+		}
+	}
+
 	// Allowed hosts check.
 	if len(s.opt.AllowedHosts) > 0 && !s.opt.IsDevelopment {
 		isGoodHost := false
 		for _, allowedHost := range s.opt.AllowedHosts {
-			if strings.EqualFold(allowedHost, r.Host) {
+			if strings.EqualFold(allowedHost, host) {
 				isGoodHost = true
 				break
 			}
@@ -131,7 +161,7 @@ func (s *Secure) Process(w http.ResponseWriter, r *http.Request) error {
 
 		if !isGoodHost {
 			s.badHostHandler.ServeHTTP(w, r)
-			return fmt.Errorf("Bad host name: %s", r.Host)
+			return fmt.Errorf("Bad host name: %s", host)
 		}
 	}
 
@@ -150,7 +180,7 @@ func (s *Secure) Process(w http.ResponseWriter, r *http.Request) error {
 	if s.opt.SSLRedirect && !isSSL && !s.opt.IsDevelopment {
 		url := r.URL
 		url.Scheme = "https"
-		url.Host = r.Host
+		url.Host = host
 
 		if len(s.opt.SSLHost) > 0 {
 			url.Host = s.opt.SSLHost
@@ -193,7 +223,9 @@ func (s *Secure) Process(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	// XSS Protection header.
-	if s.opt.BrowserXssFilter {
+	if len(s.opt.CustomBrowserXssValue) > 0 {
+		w.Header().Add(xssProtectionHeader, s.opt.CustomBrowserXssValue)
+	} else if s.opt.BrowserXssFilter {
 		w.Header().Add(xssProtectionHeader, xssProtectionValue)
 	}
 
@@ -204,7 +236,16 @@ func (s *Secure) Process(w http.ResponseWriter, r *http.Request) error {
 
 	// Content Security Policy header.
 	if len(s.opt.ContentSecurityPolicy) > 0 {
-		w.Header().Add(cspHeader, s.opt.ContentSecurityPolicy)
+		if s.opt.nonceEnabled {
+			w.Header().Add(cspHeader, fmt.Sprintf(s.opt.ContentSecurityPolicy, CSPNonce(r.Context())))
+		} else {
+			w.Header().Add(cspHeader, s.opt.ContentSecurityPolicy)
+		}
+	}
+
+	// Referrer Policy header.
+	if len(s.opt.ReferrerPolicy) > 0 {
+		w.Header().Add(referrerPolicyHeader, s.opt.ReferrerPolicy)
 	}
 
 	return nil

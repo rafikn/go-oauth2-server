@@ -6,20 +6,28 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/RichardKnop/go-oauth2-server/models"
 	"github.com/RichardKnop/go-oauth2-server/oauth"
 	"github.com/RichardKnop/go-oauth2-server/oauth/tokentypes"
 	testutil "github.com/RichardKnop/go-oauth2-server/test-util"
 	"github.com/RichardKnop/go-oauth2-server/util"
+	"github.com/RichardKnop/uuid"
+	"github.com/stretchr/testify/assert"
 )
 
 func (suite *OauthTestSuite) TestNewIntrospectResponseFromAccessToken() {
-	accessToken := &oauth.AccessToken{
-		Token:     "test_token_introspect_1",
-		ExpiresAt: time.Now().UTC().Add(+10 * time.Second),
-		ClientID:  util.PositiveIntOrNull(int64(suite.clients[0].ID)),
-		UserID:    util.PositiveIntOrNull(int64(suite.users[0].ID)),
-		Scope:     "read_write",
+	MG := models.MyGormModel{
+		ID:        uuid.New(),
+		CreatedAt: time.Now().UTC(),
+	}
+
+	accessToken := &models.OauthAccessToken{
+		MyGormModel: MG,
+		Token:       "test_token_introspect_1",
+		ExpiresAt:   time.Now().UTC().Add(+10 * time.Second),
+		ClientID:    util.StringOrNull(string(suite.clients[0].ID)),
+		UserID:      util.StringOrNull(string(suite.users[0].ID)),
+		Scope:       "read_write",
 	}
 	expected := &oauth.IntrospectResponse{
 		Active:    true,
@@ -34,13 +42,13 @@ func (suite *OauthTestSuite) TestNewIntrospectResponseFromAccessToken() {
 	assert.NoError(suite.T(), err)
 	assert.Equal(suite.T(), expected, actual)
 
-	accessToken.ClientID = util.PositiveIntOrNull(0)
+	accessToken.ClientID = util.StringOrNull("")
 	expected.ClientID = ""
 	actual, err = suite.service.NewIntrospectResponseFromAccessToken(accessToken)
 	assert.NoError(suite.T(), err)
 	assert.Equal(suite.T(), expected, actual)
 
-	accessToken.UserID = util.PositiveIntOrNull(0)
+	accessToken.UserID = util.StringOrNull("")
 	expected.Username = ""
 	actual, err = suite.service.NewIntrospectResponseFromAccessToken(accessToken)
 	assert.NoError(suite.T(), err)
@@ -48,12 +56,18 @@ func (suite *OauthTestSuite) TestNewIntrospectResponseFromAccessToken() {
 }
 
 func (suite *OauthTestSuite) TestNewIntrospectResponseFromRefreshToken() {
-	refreshToken := &oauth.RefreshToken{
-		Token:     "test_token_introspect_1",
-		ExpiresAt: time.Now().UTC().Add(+10 * time.Second),
-		ClientID:  util.PositiveIntOrNull(int64(suite.clients[0].ID)),
-		UserID:    util.PositiveIntOrNull(int64(suite.users[0].ID)),
-		Scope:     "read_write",
+	MG := models.MyGormModel{
+		ID:        uuid.New(),
+		CreatedAt: time.Now().UTC(),
+	}
+
+	refreshToken := &models.OauthRefreshToken{
+		MyGormModel: MG,
+		Token:       "test_token_introspect_1",
+		ExpiresAt:   time.Now().UTC().Add(+10 * time.Second),
+		ClientID:    util.StringOrNull(string(suite.clients[0].ID)),
+		UserID:      util.StringOrNull(string(suite.users[0].ID)),
+		Scope:       "read_write",
 	}
 	expected := &oauth.IntrospectResponse{
 		Active:    true,
@@ -68,13 +82,13 @@ func (suite *OauthTestSuite) TestNewIntrospectResponseFromRefreshToken() {
 	assert.NoError(suite.T(), err)
 	assert.Equal(suite.T(), expected, actual)
 
-	refreshToken.ClientID = util.PositiveIntOrNull(0)
+	refreshToken.ClientID = util.StringOrNull("")
 	expected.ClientID = ""
 	actual, err = suite.service.NewIntrospectResponseFromRefreshToken(refreshToken)
 	assert.NoError(suite.T(), err)
 	assert.Equal(suite.T(), expected, actual)
 
-	refreshToken.UserID = util.PositiveIntOrNull(0)
+	refreshToken.UserID = util.StringOrNull("")
 	expected.Username = ""
 	actual, err = suite.service.NewIntrospectResponseFromRefreshToken(refreshToken)
 	assert.NoError(suite.T(), err)
@@ -123,7 +137,11 @@ func (suite *OauthTestSuite) TestHandleIntrospectInvailidTokenHint() {
 
 func (suite *OauthTestSuite) TestHandleIntrospectAccessToken() {
 	// Insert a test access token with a user
-	accessToken := &oauth.AccessToken{
+	accessToken := &models.OauthAccessToken{
+		MyGormModel: models.MyGormModel{
+			ID:        uuid.New(),
+			CreatedAt: time.Now().UTC(),
+		},
 		Token:     "test_token_introspect_1",
 		ExpiresAt: time.Now().UTC().Add(+10 * time.Second),
 		Client:    suite.clients[0],
@@ -188,7 +206,11 @@ func (suite *OauthTestSuite) TestHandleIntrospectAccessToken() {
 
 func (suite *OauthTestSuite) TestHandleIntrospectRefreshToken() {
 	// Insert a test refresh token with a user
-	refreshToken := &oauth.RefreshToken{
+	refreshToken := &models.OauthRefreshToken{
+		MyGormModel: models.MyGormModel{
+			ID:        uuid.New(),
+			CreatedAt: time.Now().UTC(),
+		},
 		Token:     "test_token_introspect_1",
 		ExpiresAt: time.Now().UTC().Add(+10 * time.Second),
 		Client:    suite.clients[0],

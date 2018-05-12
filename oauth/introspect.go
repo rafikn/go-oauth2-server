@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/RichardKnop/go-oauth2-server/models"
 	"github.com/RichardKnop/go-oauth2-server/oauth/tokentypes"
 )
 
@@ -21,7 +22,7 @@ var (
 	ErrTokenHintInvalid = errors.New("Invalid token hint")
 )
 
-func (s *Service) introspectToken(r *http.Request, client *Client) (*IntrospectResponse, error) {
+func (s *Service) introspectToken(r *http.Request, client *models.OauthClient) (*IntrospectResponse, error) {
 	// Parse the form so r.Form becomes available
 	if err := r.ParseForm(); err != nil {
 		return nil, err
@@ -60,7 +61,7 @@ func (s *Service) introspectToken(r *http.Request, client *Client) (*IntrospectR
 }
 
 // NewIntrospectResponseFromAccessToken ...
-func (s *Service) NewIntrospectResponseFromAccessToken(accessToken *AccessToken) (*IntrospectResponse, error) {
+func (s *Service) NewIntrospectResponseFromAccessToken(accessToken *models.OauthAccessToken) (*IntrospectResponse, error) {
 	var introspectResponse = &IntrospectResponse{
 		Active:    true,
 		Scope:     accessToken.Scope,
@@ -69,8 +70,8 @@ func (s *Service) NewIntrospectResponseFromAccessToken(accessToken *AccessToken)
 	}
 
 	if accessToken.ClientID.Valid {
-		client := new(Client)
-		notFound := s.db.Select("key").First(client, accessToken.ClientID.Int64).
+		client := new(models.OauthClient)
+		notFound := s.db.Select("key").First(client, accessToken.ClientID.String).
 			RecordNotFound()
 		if notFound {
 			return nil, ErrClientNotFound
@@ -79,9 +80,9 @@ func (s *Service) NewIntrospectResponseFromAccessToken(accessToken *AccessToken)
 	}
 
 	if accessToken.UserID.Valid {
-		user := new(User)
-		notFound := s.db.Select("username").First(user, accessToken.UserID.Int64).
-			RecordNotFound()
+		user := new(models.OauthUser)
+		notFound := s.db.Select("username").Where("id = ?", accessToken.UserID.String).
+			First(user, accessToken.UserID.String).RecordNotFound()
 		if notFound {
 			return nil, ErrUserNotFound
 		}
@@ -92,7 +93,7 @@ func (s *Service) NewIntrospectResponseFromAccessToken(accessToken *AccessToken)
 }
 
 // NewIntrospectResponseFromRefreshToken ...
-func (s *Service) NewIntrospectResponseFromRefreshToken(refreshToken *RefreshToken) (*IntrospectResponse, error) {
+func (s *Service) NewIntrospectResponseFromRefreshToken(refreshToken *models.OauthRefreshToken) (*IntrospectResponse, error) {
 	var introspectResponse = &IntrospectResponse{
 		Active:    true,
 		Scope:     refreshToken.Scope,
@@ -101,8 +102,8 @@ func (s *Service) NewIntrospectResponseFromRefreshToken(refreshToken *RefreshTok
 	}
 
 	if refreshToken.ClientID.Valid {
-		client := new(Client)
-		notFound := s.db.Select("key").First(client, refreshToken.ClientID.Int64).
+		client := new(models.OauthClient)
+		notFound := s.db.Select("key").First(client, refreshToken.ClientID.String).
 			RecordNotFound()
 		if notFound {
 			return nil, ErrClientNotFound
@@ -111,9 +112,9 @@ func (s *Service) NewIntrospectResponseFromRefreshToken(refreshToken *RefreshTok
 	}
 
 	if refreshToken.UserID.Valid {
-		user := new(User)
-		notFound := s.db.Select("username").First(user, refreshToken.UserID.Int64).
-			RecordNotFound()
+		user := new(models.OauthUser)
+		notFound := s.db.Select("username").Where("id = ?", refreshToken.UserID.String).
+			First(user, refreshToken.UserID.String).RecordNotFound()
 		if notFound {
 			return nil, ErrUserNotFound
 		}

@@ -1,40 +1,43 @@
 [1]: ../../../assets/blob/master/go-oauth2-server/login_screenshot.png
 [2]: ../../../assets/blob/master/go-oauth2-server/authorization_code_screenshot.png
 [3]: ../../../assets/blob/master/go-oauth2-server/implicit_screenshot.png
+[4]: http://patreon_public_assets.s3.amazonaws.com/sized/becomeAPatronBanner.png
+[5]: http://richardknop.com/images/btcaddress.png
 
-[![Codeship Status for RichardKnop/go-oauth2-server](https://codeship.com/projects/fba90e10-7020-0133-0db8-4acedf45d268/status?branch=master)](https://codeship.com/projects/116440)
-
-[![GoDoc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/RichardKnop/go-oauth2-server)
-[![Travis Status for RichardKnop/go-oauth2-server](https://travis-ci.org/RichardKnop/go-oauth2-server.svg?branch=master)](https://travis-ci.org/RichardKnop/go-oauth2-server)
-
-# Go OAuth2 Server
+## Go OAuth2 Server
 
 This service implements [OAuth 2.0 specification](http://tools.ietf.org/html/rfc6749#section-4.3). Excerpts from the specification are included in this README file to describe different grant types. Please read the full spec for more detailed information.
 
-It relies on `Postgres` for database and `etcd` for configuration but both are easily customizable. An [ORM library](https://github.com/jinzhu/gorm) is used for database communication.
+[![Travis Status for RichardKnop/go-oauth2-server](https://travis-ci.org/RichardKnop/go-oauth2-server.svg?branch=master&label=linux+build)](https://travis-ci.org/RichardKnop/go-oauth2-server)
+[![godoc for RichardKnop/go-oauth2-server](https://godoc.org/github.com/nathany/looper?status.svg)](http://godoc.org/github.com/RichardKnop/go-oauth2-server)
+[![codecov for RichardKnop/go-oauth2-server](https://codecov.io/gh/RichardKnop/go-oauth2-server/branch/master/graph/badge.svg)](https://codecov.io/gh/RichardKnop/go-oauth2-server)
 
-# Index
+[![Sourcegraph for RichardKnop/go-oauth2-server](https://sourcegraph.com/github.com/RichardKnop/go-oauth2-server/-/badge.svg)](https://sourcegraph.com/github.com/RichardKnop/go-oauth2-server?badge)
+[![Donate Bitcoin](https://img.shields.io/badge/donate-bitcoin-orange.svg)](https://richardknop.github.io/donate/)
 
-* [Go OAuth2 Server](#go-oauth2-server)
-* [Index](#index)
-* [API](#api)
-  * [OAuth 2.0](#oauth-20)
-    * [Client Authentication](#client-authentication)
-    * [Grant Types](#grant-types)
-      * [Authorization Code](#authorization-code)
-      * [Implicit](#implicit)
-      * [Resource Owner Password Credentials](#resource-owner-password-credentials)
-      * [Client Credentials](#client-credentials)
-    * [Refreshing An Access Token](#refreshing-an-access-token)
-    * [Token Introspection](#token-introspection)
+---
+
+* [OAuth 2.0](#oauth-20)
+  * [Client Authentication](#client-authentication)
+  * [Grant Types](#grant-types)
+    * [Authorization Code](#authorization-code)
+    * [Implicit](#implicit)
+    * [Resource Owner Password Credentials](#resource-owner-password-credentials)
+    * [Client Credentials](#client-credentials)
+  * [Refreshing An Access Token](#refreshing-an-access-token)
+  * [Token Introspection](#token-introspection)
+* [Plugins](#plugins)
+* [Session Storage](#session-storage)
 * [Dependencies](#dependencies)
 * [Setup](#setup)
-* [Test Data](#test-data)
+  * [etcd](#etcd)
+  * [consul](#consul)
+  * [postgres](#postgres)
+* [Compile & Run Data](#compile--run)
 * [Testing](#testing)
 * [Docker](#docker)
 * [Docker Compose](#docker-compose)
-
-# API
+* [Supporting the project](#supporting-the-project)
 
 ## OAuth 2.0
 
@@ -121,7 +124,7 @@ The authorization server authenticates the client, validates the authorization c
 
 ```json
 {
-  "user_id": 1,
+  "user_id": "1",
   "access_token": "00ccd40e-72ca-4e79-a4b6-67c95e2e3f1c",
   "expires_in": 3600,
   "token_type": "Bearer",
@@ -250,7 +253,7 @@ The client requests an access token from the authorization server's token endpoi
 curl --compressed -v localhost:8080/v1/oauth/tokens \
 	-u test_client_1:test_secret \
 	-d "grant_type=password" \
-	-d "username=test@username" \
+	-d "username=test@user" \
 	-d "password=test_password" \
 	-d "scope=read_write"
 ```
@@ -259,7 +262,7 @@ The authorization server authenticates the client and validates the resource own
 
 ```json
 {
-  "user_id": 1,
+  "user_id": "1",
   "access_token": "00ccd40e-72ca-4e79-a4b6-67c95e2e3f1c",
   "expires_in": 3600,
   "token_type": "Bearer",
@@ -332,7 +335,7 @@ If valid and authorized, the authorization server issues an access token.
 
 ```json
 {
-  "user_id": 1,
+  "user_id": "1",
   "access_token": "1f962bd5-7890-435d-b619-584b6aa32e6c",
   "expires_in": 3600,
   "token_type": "Bearer",
@@ -369,27 +372,75 @@ The authorization server responds meta-information about a token.
 }
 ```
 
-# Dependencies
+## Plugins
+
+This server is easily extended or modified through the use of plugins. Four services, [health](https://github.com/RichardKnop/go-oauth2-server/tree/master/health), [oauth](https://github.com/RichardKnop/go-oauth2-server/tree/master/oauth), [session](https://github.com/RichardKnop/go-oauth2-server/tree/master/session) and [web](https://github.com/RichardKnop/go-oauth2-server/tree/master/web) are available for modification.
+
+In order to implement a plugin:
+1. Create your own interface that implements all of methods of the service you are replacing.
+2. Modify `cmd/run_server.go` to use your service by calling the `session.Use[service-you-are-replaceing]Service(yourCustomService.NewService())` before the services are initialized via `services.Init(cnf, db)`.
+
+For example, to implement an available [redis session storage plugin](https://github.com/adam-hanna/redis-sessions):
+
+~~~go
+// $ go get https://github.com/adam-hanna/redis-sessions
+//
+// cmd/run_server.go
+import (
+    ...
+    "github.com/adam-hanna/redis-sessions/redis"
+    ...
+)
+
+// RunServer runs the app
+func RunServer(configBackend string) error {
+    ...
+
+    // configure redis for session store
+    sessionSecrets := make([][]byte, 1)
+    sessionSecrets[0] = []byte(cnf.Session.Secret)
+    redisConfig := redis.ConfigType{
+        Size:           10,
+        Network:        "tcp",
+        Address:        ":6379",
+        Password:       "",
+        SessionSecrets: sessionSecrets,
+    }
+
+    // start the services
+    services.UseSessionService(redis.NewService(cnf, redisConfig))
+    if err := services.InitServices(cnf, db); err != nil {
+        return err
+    }
+    defer services.CloseServices()
+
+    ...
+}
+~~~
+
+## Session Storage
+
+By default, this server implements in-memory, cookie sessions via [gorilla sessions](https://github.com/gorilla/sessions).
+
+However, because the session service can be replaced via a plugin, any of the available [gorilla sessions store implementations](https://github.com/gorilla/sessions#store-implementations) can be wrapped by `session.ServiceInterface`.
+
+## Dependencies
 
 According to [Go 1.5 Vendor experiment](https://docs.google.com/document/d/1Bz5-UB7g2uPBdOx-rw5t9MxJwkfpx90cqG9AFL0JAYo), all dependencies are stored in the vendor directory. This approach is called `vendoring` and is the best practice for Go projects to lock versions of dependencies in order to achieve reproducible builds.
 
-To update dependencies during development:
+This project uses [dep](https://github.com/golang/dep) for dependency management. To update dependencies during development:
 
 ```sh
-make update-deps
+dep ensure
 ```
 
-To install dependencies:
+## Setup
 
-```sh
-make install-deps
-```
+For distributed config storage you can use either etcd or consul (etcd being the default)
 
-# Setup
+If you are developing on OSX, install `etcd` or `consul`, `Postgres` and `nats-streaming-server`:
 
-If you are developing on OSX, install `etcd`, `Postgres` and `nats-streaming-server`:
-
-## etcd
+### etcd
 
 ```sh
 brew install etcd
@@ -398,7 +449,50 @@ brew install etcd
 Load a development configuration into `etcd`:
 
 ```sh
-etcdctl set /config/go_oauth2_server.json '{
+ETCDCTL_API=3 etcdctl put /config/go_oauth2_server.json '{
+  "Database": {
+    "Type": "postgres",
+    "Host": "localhost",
+    "Port": 5432,
+    "User": "go_oauth2_server",
+    "Password": "",
+    "DatabaseName": "go_oauth2_server",
+    "MaxIdleConns": 5,
+    "MaxOpenConns": 5
+  },
+  "Oauth": {
+    "AccessTokenLifetime": 3600,
+    "RefreshTokenLifetime": 1209600,
+    "AuthCodeLifetime": 3600
+  },
+  "Session": {
+    "Secret": "test_secret",
+    "Path": "/",
+    "MaxAge": 604800,
+    "HTTPOnly": true
+  },
+  "IsDevelopment": true
+}'
+```
+
+If you are using etcd API version 3, use `etcdctl put` instead of `etcdctl set`.
+
+Check the config was loaded properly:
+
+```sh
+etcdctl get /config/go_oauth2_server.json
+```
+
+### consul
+
+```sh
+brew install consul
+```
+
+Load a development configuration into `consul`:
+
+```sh
+consul kv put /config/go_oauth2_server.json '{
   "Database": {
     "Type": "postgres",
     "Host": "localhost",
@@ -427,11 +521,10 @@ etcdctl set /config/go_oauth2_server.json '{
 Check the config was loaded properly:
 
 ```sh
-etcdctl get /config/go_oauth2_server.json
+consul kv get /config/go_oauth2_server.json
 ```
 
-
-## Postgres
+### Postgres
 
 ```sh
 brew install postgres
@@ -444,13 +537,15 @@ createuser --createdb go_oauth2_server
 createdb -U go_oauth2_server go_oauth2_server
 ```
 
-# Compile & Run
+## Compile & Run
 
 Compile the app:
 
 ```sh
 go install .
 ```
+
+The binary accepts an optional flag of `--configBackend` which can be set to `etcd | consul`, defaults to `etcd`
 
 Run migrations:
 
@@ -472,7 +567,24 @@ When deploying, you can set etcd related environment variables:
 * `ETCD_CA_FILE`
 * `ETCD_CONFIG_PATH`
 
-# Testing
+You can also set consul related variables
+
+* `CONSUL_ENDPOINT`
+* `CONSUL_CERT_FILE`
+* `CONSUL_KEY_FILE`
+* `CONSUL_CA_FILE`
+* `CONSUL_CONFIG_PATH`
+
+and the equivalent above commands would be
+
+```sh
+go-oauth2-server --configBackend consul migrate
+```
+```sh
+go-oauth2-server --configBackend consul runserver
+```
+
+## Testing
 
 I have used a mix of unit and functional tests so you need to have `sqlite` installed in order for the tests to run successfully as the suite creates an in-memory database.
 
@@ -482,13 +594,13 @@ To run tests:
 make test
 ```
 
-# Docker
+## Docker
 
 Build a Docker image and run the app in a container:
 
 ```sh
 docker build -t go-oauth2-server:latest .
-docker run -e ETCD_ENDPOINTs=localhost:2379 -p 8080:8080 --name go-oauth2-server go-oauth2-server:latest
+docker run -e ETCD_ENDPOINTS=localhost:2379 -p 8080:8080 --name go-oauth2-server go-oauth2-server:latest
 ```
 
 You can load fixtures with `docker exec` command:
@@ -500,7 +612,7 @@ docker exec <container_id> /go/bin/go-oauth2-server loaddata \
   oauth/fixtures/test_clients.yml
 ```
 
-# Docker Compose
+## Docker Compose
 
 You can use [docker-compose](https://docs.docker.com/compose/) to start the app, postgres, etcd in separate linked containers:
 
@@ -508,8 +620,14 @@ You can use [docker-compose](https://docs.docker.com/compose/) to start the app,
 docker-compose up
 ```
 
-During up process all configuration and fixtures will be loaded. After successful up you can check, that app is running using for example the health check request:
+During `docker-compose up` process all configuration and fixtures will be loaded. After successful up you can check, that app is running using for example the health check request:
 
 ```sh
 curl --compressed -v localhost:8080/v1/health
 ```
+
+## Supporting the project
+
+Donate BTC to my wallet if you find this project useful: `12iFVjQ5n3Qdmiai4Mp9EG93NSvDipyRKV`
+
+![Donate BTC][5]

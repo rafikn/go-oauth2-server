@@ -2,30 +2,32 @@
 # and a workspace (GOPATH) configured at /go.
 FROM golang
 
-# Cd into the api code directory
-WORKDIR /go/src/github.com/RichardKnop/go-oauth2-server
-
-# Create a new unprivileged user
-RUN useradd --user-group --shell /bin/false www
-
-# Chown /go/src/github.com/RichardKnop/go-oauth2-server/ to www user
-RUN chown -R www:www /go/src/github.com/RichardKnop/go-oauth2-server/
-
-# Use the unprivileged user
-USER www
-
-# Copy the local package files to the container's workspace.
-ADD . /go/src/github.com/RichardKnop/go-oauth2-server
-
-# Install the api program
-RUN go install github.com/RichardKnop/go-oauth2-server
+# Contact maintainer with any issues you encounter
+MAINTAINER Richard Knop <risoknop@gmail.com>
 
 # Set environment variables
 ENV PATH /go/bin:$PATH
 
-# Copy the docker-entrypoint.sh script and use it as entrypoint
-COPY ./docker-entrypoint.sh /
-ENTRYPOINT ["/docker-entrypoint.sh"]
+# Create a new unprivileged user
+RUN useradd --user-group --shell /bin/false app
+
+# Cd into the api code directory
+WORKDIR /go/src/github.com/RichardKnop/go-oauth2-server
+
+# Copy the local package files to the container's workspace.
+ADD . /go/src/github.com/RichardKnop/go-oauth2-server
+
+# Chown the application directory to app user
+RUN chown -R app:app /go/src/github.com/RichardKnop/go-oauth2-server/
+
+# Use the unprivileged user
+USER app
+
+# Install the api program
+RUN go install github.com/RichardKnop/go-oauth2-server
+
+# User docker-entrypoint.sh script as entrypoint
+ENTRYPOINT ["./docker-entrypoint.sh"]
 
 # Document that the service listens on port 8080.
 EXPOSE 8080

@@ -1,16 +1,17 @@
 package oauth_test
 
 import (
-	"log"
 	"os"
 	"testing"
 
+	"github.com/RichardKnop/go-oauth2-server/config"
+	"github.com/RichardKnop/go-oauth2-server/log"
+	"github.com/RichardKnop/go-oauth2-server/models"
+	"github.com/RichardKnop/go-oauth2-server/oauth"
+	"github.com/RichardKnop/go-oauth2-server/test-util"
 	"github.com/gorilla/mux"
 	"github.com/jinzhu/gorm"
 	"github.com/stretchr/testify/suite"
-	"github.com/RichardKnop/go-oauth2-server/config"
-	"github.com/RichardKnop/go-oauth2-server/oauth"
-	"github.com/RichardKnop/go-oauth2-server/test-util"
 )
 
 var (
@@ -25,13 +26,13 @@ var (
 	}
 
 	testMigrations = []func(*gorm.DB) error{
-		oauth.MigrateAll,
+		models.MigrateAll,
 	}
 )
 
 func init() {
 	if err := os.Chdir("../"); err != nil {
-		log.Fatal(err)
+		log.ERROR.Fatal(err)
 	}
 }
 
@@ -41,40 +42,40 @@ type OauthTestSuite struct {
 	cnf     *config.Config
 	db      *gorm.DB
 	service *oauth.Service
-	clients []*oauth.Client
-	users   []*oauth.User
+	clients []*models.OauthClient
+	users   []*models.OauthUser
 	router  *mux.Router
 }
 
 // The SetupSuite method will be run by testify once, at the very
 // start of the testing suite, before any tests are run.
 func (suite *OauthTestSuite) SetupSuite() {
-
 	// Initialise the config
-	suite.cnf = config.NewConfig(false, false)
+	suite.cnf = config.NewConfig(false, false, "etcd")
 
 	// Create the test database
 	db, err := testutil.CreateTestDatabasePostgres(
+		suite.cnf.Database.Host,
 		testDbUser,
 		testDbName,
 		testMigrations,
 		testFixtures,
 	)
 	if err != nil {
-		log.Fatal(err)
+		log.ERROR.Fatal(err)
 	}
 	suite.db = db
 
 	// Fetch test client
-	suite.clients = make([]*oauth.Client, 0)
-	if err := suite.db.Order("id").Find(&suite.clients).Error; err != nil {
-		log.Fatal(err)
+	suite.clients = make([]*models.OauthClient, 0)
+	if err := suite.db.Order("created_at").Find(&suite.clients).Error; err != nil {
+		log.ERROR.Fatal(err)
 	}
 
 	// Fetch test users
-	suite.users = make([]*oauth.User, 0)
-	if err := suite.db.Order("id").Find(&suite.users).Error; err != nil {
-		log.Fatal(err)
+	suite.users = make([]*models.OauthUser, 0)
+	if err := suite.db.Order("created_at").Find(&suite.users).Error; err != nil {
+		log.ERROR.Fatal(err)
 	}
 
 	// Initialise the service
@@ -100,11 +101,11 @@ func (suite *OauthTestSuite) SetupTest() {
 func (suite *OauthTestSuite) TearDownTest() {
 	// Scopes are static, populated from fixtures,
 	// so there is no need to clear them after running a test
-	suite.db.Unscoped().Delete(new(oauth.AuthorizationCode))
-	suite.db.Unscoped().Delete(new(oauth.RefreshToken))
-	suite.db.Unscoped().Delete(new(oauth.AccessToken))
-	suite.db.Unscoped().Not("id", []int64{1, 2}).Delete(new(oauth.User))
-	suite.db.Unscoped().Not("id", []int64{1, 2, 3}).Delete(new(oauth.Client))
+	suite.db.Unscoped().Delete(new(models.OauthAuthorizationCode))
+	suite.db.Unscoped().Delete(new(models.OauthRefreshToken))
+	suite.db.Unscoped().Delete(new(models.OauthAccessToken))
+	suite.db.Unscoped().Not("id", []string{"1", "2"}).Delete(new(models.OauthUser))
+	suite.db.Unscoped().Not("id", []string{"1", "2", "3"}).Delete(new(models.OauthClient))
 }
 
 // TestOauthTestSuite ...
